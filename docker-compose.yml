@@ -1,0 +1,156 @@
+# ============================================================================
+# Docker Compose Configuration for FastAPI Microservice
+# ============================================================================
+# This docker-compose file provides all database services for development.
+# 
+# MODULAR DATABASE USAGE:
+# You can disable unused services to save resources:
+#
+# 1. Comment out services you don't need
+# 2. Update the 'depends_on' section in the 'api' service
+# 3. Set corresponding ENABLE_* flags to false in api environment
+#
+# EXAMPLE CONFIGURATION PROFILES:
+# ============================================================================
+# Profile 1 - Relational Only (PostgreSQL):
+#   - Keep: postgres
+#   - Comment: mongodb, redis
+#   - Set: ENABLE_POSTGRES=true ENABLE_MONGODB=false ENABLE_REDIS=false
+#
+# Profile 2 - Document + Cache (MongoDB + Redis):
+#   - Keep: mongodb, redis
+#   - Comment: postgres
+#   - Set: ENABLE_POSTGRES=false ENABLE_MONGODB=true ENABLE_REDIS=true
+#
+# Profile 3 - Cache Only (Redis):
+#   - Keep: redis
+#   - Comment: postgres, mongodb
+#   - Set: ENABLE_POSTGRES=false ENABLE_MONGODB=false ENABLE_REDIS=true
+# ============================================================================
+
+services:
+  # PostgreSQL Database
+  # Relational database for structured data
+  postgres:
+    image: postgres:15-alpine
+    container_name: microservice-postgres
+    environment:
+      POSTGRES_DB: microservice_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservice-network
+    # To disable: Comment out this entire service block
+
+  # Redis Cache
+  # Key-value store for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: microservice-redis
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservice-network
+    # To disable: Comment out this entire service block
+
+  # MongoDB
+  # Document database for flexible schema data
+  mongodb:
+    image: mongo:7
+    container_name: microservice-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: microservice_db
+    ports:
+      - "37017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservice-network
+    # To disable: Comment out this entire service block
+
+  # FastAPI Application
+  # Your microservice API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: microservice-api
+    ports:
+      - "18080:8080"
+    environment:
+      APP_NAME: microservice-api
+      APP_VERSION: 1.0.0
+      APP_ENV: development
+      DEBUG: "true"
+      
+      # Database Enable Flags - Adjust based on your service type
+      # See .env.example for configuration profiles
+      ENABLE_POSTGRES: "true"
+      ENABLE_MONGODB: "true"
+      ENABLE_REDIS: "true"
+      
+      # Database Connection Strings
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: microservice_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: 27017
+      MONGODB_DB: microservice_db
+    depends_on:
+      # NOTE: Comment out unused databases from depends_on
+      # Example for Relational-only service (PostgreSQL only):
+      #   - Keep postgres
+      #   - Remove redis and mongodb
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - microservice-network
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  mongodb_data:
+    driver: local
+
+networks:
+  microservice-network:
+    driver: bridge

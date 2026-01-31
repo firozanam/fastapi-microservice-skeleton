@@ -1,0 +1,398 @@
+---
+# Kubernetes Deployment Manifest
+# 
+# MODULAR DATABASE CONFIGURATION:
+# ============================================================================
+# This boilerplate supports selective database enablement for different 
+# microservices. Configure the ENABLE_* flags based on your service needs.
+#
+# EXAMPLE CONFIGURATION PROFILES:
+# -------------------------
+# Profile 1 - Relational Only (PostgreSQL):
+#   - ENABLE_POSTGRES: "true"
+#   - ENABLE_MONGODB: "false"
+#   - ENABLE_REDIS: "false"
+#
+# Profile 2 - Document + Cache (MongoDB + Redis):
+#   - ENABLE_POSTGRES: "false"
+#   - ENABLE_MONGODB: "true"
+#   - ENABLE_REDIS: "true"
+#
+# Profile 3 - Relational + Cache (PostgreSQL + Redis):
+#   - ENABLE_POSTGRES: "true"
+#   - ENABLE_MONGODB: "false"
+#   - ENABLE_REDIS: "true"
+#
+# Profile 4 - Cache Only (Redis):
+#   - ENABLE_POSTGRES: "false"
+#   - ENABLE_MONGODB: "false"
+#   - ENABLE_REDIS: "true"
+#
+# NOTE: If you disable a database, you can remove its connection credentials
+#       from the ConfigMap and Secrets below. The service will start without
+#       attempting to connect to the disabled database.
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microservice-api
+  namespace: microservices
+  labels:
+    app: microservice-api
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: microservice-api
+  template:
+    metadata:
+      labels:
+        app: microservice-api
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: microservice-api-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: microservice-api
+        image: registry.example.com/microservice-api:v1.0.0
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        # ============================================================================
+        # APPLICATION CONFIGURATION
+        # ============================================================================
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: APP_NAME
+        - name: APP_VERSION
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: APP_VERSION
+        - name: APP_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: APP_ENV
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: DEBUG
+        # ============================================================================
+        # MODULAR DATABASE ENABLE FLAGS
+        # Set to "true" or "false" based on your service's database requirements
+        # ============================================================================
+        - name: ENABLE_POSTGRES
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: enable-postgres
+              optional: false
+        - name: ENABLE_MONGODB
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: enable-mongodb
+              optional: false
+        - name: ENABLE_REDIS
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: enable-redis
+              optional: false
+        # ============================================================================
+        # POSTGRESQL CONFIGURATION (only required if ENABLE_POSTGRES=true)
+        # ============================================================================
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: microservice-api-secrets
+              key: postgres-host
+              optional: true  # Make optional if PostgreSQL disabled
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: postgres-port
+              optional: true
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: postgres-db
+              optional: true
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: microservice-api-secrets
+              key: postgres-user
+              optional: true
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: microservice-api-secrets
+              key: postgres-password
+              optional: true
+        # ============================================================================
+        # MONGODB CONFIGURATION (only required if ENABLE_MONGODB=true)
+        # ============================================================================
+        - name: MONGODB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: mongodb-host
+              optional: true  # Make optional if MongoDB disabled
+        - name: MONGODB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: mongodb-port
+              optional: true
+        - name: MONGODB_DB
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: mongodb-db
+              optional: true
+        - name: MONGODB_USER
+          valueFrom:
+            secretKeyRef:
+              name: microservice-api-secrets
+              key: mongodb-user
+              optional: true
+        - name: MONGODB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: microservice-api-secrets
+              key: mongodb-password
+              optional: true
+        # ============================================================================
+        # REDIS CONFIGURATION (only required if ENABLE_REDIS=true)
+        # ============================================================================
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: redis-host
+              optional: true  # Make optional if Redis disabled
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: microservice-api-config
+              key: redis-port
+              optional: true
+        # ============================================================================
+        # SECURITY CONFIGURATION
+        # ============================================================================
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: microservice-api-secrets
+              key: jwt-secret-key
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: microservice-api
+  namespace: microservices
+  labels:
+    app: microservice-api
+spec:
+  type: ClusterIP
+  selector:
+    app: microservice-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microservice-api-config
+  namespace: microservices
+data:
+  # ============================================================================
+  # APPLICATION CONFIGURATION
+  # ============================================================================
+  APP_NAME: "microservice-api"
+  APP_VERSION: "1.0.0"
+  APP_ENV: "production"
+  DEBUG: "false"
+  # ============================================================================
+  # MODULAR DATABASE ENABLE FLAGS
+  # Configure which databases this service uses
+  # ============================================================================
+  # EXAMPLE PROFILES (uncomment the one matching your service):
+  #
+  # Profile 1 - Relational Only (PostgreSQL):
+  enable-postgres: "true"
+  enable-mongodb: "false"
+  enable-redis: "false"
+  #
+  # Profile 2 - Document + Cache (MongoDB + Redis):
+  # enable-postgres: "false"
+  # enable-mongodb: "true"
+  # enable-redis: "true"
+  #
+  # Profile 3 - Relational + Cache (PostgreSQL + Redis):
+  # enable-postgres: "true"
+  # enable-mongodb: "false"
+  # enable-redis: "true"
+  # ============================================================================
+  # POSTGRESQL CONFIGURATION (only required if enable-postgres: "true")
+  # ============================================================================
+  postgres-port: "5432"
+  postgres-db: "microservice_db"
+  # ============================================================================
+  # MONGODB CONFIGURATION (only required if enable-mongodb: "true")
+  # ============================================================================
+  mongodb-host: "mongodb-service.data.svc.cluster.local"
+  mongodb-port: "27017"
+  mongodb-db: "microservice_db"
+  # ============================================================================
+  # REDIS CONFIGURATION (only required if enable-redis: "true")
+  # ============================================================================
+  redis-host: "redis-service.data.svc.cluster.local"
+  redis-port: "6379"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: microservice-api-secrets
+  namespace: microservices
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual values
+  # 
+  # POSTGRESQL SECRETS (only required if enable-postgres: "true")
+  postgres-host: <base64-encoded-host>
+  postgres-user: <base64-encoded-user>
+  postgres-password: <base64-encoded-password>
+  # 
+  # MONGODB SECRETS (only required if enable-mongodb: "true")
+  mongodb-user: <base64-encoded-user>
+  mongodb-password: <base64-encoded-password>
+  # 
+  # SECURITY SECRETS (always required)
+  jwt-secret-key: <base64-encoded-secret>
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: microservice-api-hpa
+  namespace: microservices
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: microservice-api
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: microservice-api-pdb
+  namespace: microservices
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: microservice-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: microservice-api-sa
+  namespace: microservices
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: microservice-api-ingress
+  namespace: microservices
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - api.example.com
+    secretName: microservice-api-tls
+  rules:
+  - host: api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: microservice-api
+            port:
+              number: 80
