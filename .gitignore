@@ -209,6 +209,8 @@ cython_debug/
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Qoder IDE
+.qoder/
 # PyCharm / IntelliJ IDEA
 .idea/
 *.iml
